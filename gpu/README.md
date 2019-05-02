@@ -1,0 +1,26 @@
+# Drawing graphics via `/dev/dri/`
+
+```
+strace -- glxdemo
+ltrace -l libGL.so.1 -l libGLX.so.0 -l libGLdispatch.so.0 -l libdl.so.2 -l libXau.so.6 -l libXdmcp.so.6 -l libbsd.so.0 -l librt.so.1 -- glxdemo
+```
+
+
+## Proprietary drivers
+
+Linux doesn't have neither stable kernel API nor ABI. https://www.kernel.org/doc/html/latest/process/stable-api-nonsense.html
+
+Because of that proprietary drivers' authors ship not only binary blob with the driver itself, but also source of a small kernel module which will create ABI for binary blob. Of course, because of lack of stable API, there can be problems with that kernel module, but most of the time it's ok.
+
+To see more, download any nvidia driver and extract it. There's `kernel` folder and a very good `README.txt`.
+
+## Links
+- `man 7 drm-memory`
+- http://betteros.org/tut/graphics1.php#dumb
+- https://www.x.org/releases/X11R7.5/doc/libxcb/tutorial/#pixmapscreate
+- https://keithp.com/blogs/dri3_extension/
+- https://lwn.net/Articles/283798/
+- https://01.org/linuxgraphics/gfx-docs/drm/gpu/drm-mm.html
+- https://01.org/linuxgraphics/hardware-specification-prms/2016-intelr-processors-based-kaby-lake-platform
+- https://habr.com/ru/post/336630/
+- https://www.intel.com/content/dam/www/public/us/en/documents/white-papers/dr13-implementation-media-sdk-atom-e3900-white-paper.pdf
