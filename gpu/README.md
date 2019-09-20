@@ -1,8 +1,10 @@
 # Drawing graphics via `/dev/dri/`
 
 ```
-strace -- glxdemo
+strace -e ioctl -- glxdemo
 ltrace -l libGL.so.1 -l libGLX.so.0 -l libGLdispatch.so.0 -l libdl.so.2 -l libXau.so.6 -l libXdmcp.so.6 -l libbsd.so.0 -l librt.so.1 -- glxdemo
+
+LD_PRELOAD=./bin/ioctl-logger IOCTL_LOGGER=* glxdemo
 ```
 
 
@@ -19,8 +21,14 @@ To see more, download any nvidia driver and extract it. There's `kernel` folder 
 - http://betteros.org/tut/graphics1.php#dumb
 - https://www.x.org/releases/X11R7.5/doc/libxcb/tutorial/#pixmapscreate
 - https://keithp.com/blogs/dri3_extension/
-- https://lwn.net/Articles/283798/
+- [GEM - the Graphics Execution Manager](https://lwn.net/Articles/283798/)
 - https://01.org/linuxgraphics/gfx-docs/drm/gpu/drm-mm.html
-- https://01.org/linuxgraphics/hardware-specification-prms/2016-intelr-processors-based-kaby-lake-platform
+- [Intel HD Kaby Lake documentation](https://01.org/linuxgraphics/hardware-specification-prms/2016-intelr-processors-based-kaby-lake-platform)
 - https://habr.com/ru/post/336630/
 - https://www.intel.com/content/dam/www/public/us/en/documents/white-papers/dr13-implementation-media-sdk-atom-e3900-white-paper.pdf
+
+- https://hg.libsdl.org/SDL
+- https://hg.libsdl.org/SDL/file/25998acc4810/src/video/kmsdrm
+
+- https://github.com/tiagovignatti/intel-gpu-tools / http://cgit.freedesktop.org/xorg/app/intel-gpu-tools/
+- https://fgiesen.wordpress.com/2011/07/01/a-trip-through-the-graphics-pipeline-2011-part-1/

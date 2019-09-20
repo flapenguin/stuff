@@ -195,7 +195,7 @@ int main(int argc, char* argv[]) {
   printf("fd = %d\n", dri.dmabuf_fd);
   printf("\n");
 
-  /* Dinally, draw actual graphics. */
+  /* Finally, draw actual graphics. */
   const float pi = acosf(-1);
   for (int x = 0; x < width; x++) {
     int y = sinf(x * 8.0f * pi / width) * height / 3 + height / 2;
