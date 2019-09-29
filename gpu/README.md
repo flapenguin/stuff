@@ -24,6 +24,7 @@ To see more, download any nvidia driver and extract it. There's `kernel` folder 
 - [GEM - the Graphics Execution Manager](https://lwn.net/Articles/283798/)
 - https://01.org/linuxgraphics/gfx-docs/drm/gpu/drm-mm.html
 - [Intel HD Kaby Lake documentation](https://01.org/linuxgraphics/hardware-specification-prms/2016-intelr-processors-based-kaby-lake-platform)
+- [i915/GEM Crashcourse](https://blog.ffwll.ch/2013/01/i915gem-crashcourse-overview.html)
 - https://habr.com/ru/post/336630/
 - https://www.intel.com/content/dam/www/public/us/en/documents/white-papers/dr13-implementation-media-sdk-atom-e3900-white-paper.pdf
 
