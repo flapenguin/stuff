@@ -19,11 +19,17 @@ From                To                  Syms Read   Shared Object Library
 0x00007fffffe38988  0x00007ffffffad577  No          /lib/x86_64-linux-gnu/libc.so.6
 ```
 
+- `lldb` expects `DT_DEBUG` and cannot work with static executables even if they have `dlopen`
+- `gcc` automatically adds `DT_DEBUG` for executables, found out in a practical way
+
+- **TODO**: fixup executable's dynv, not linker's
+
 # `r_debug`
 - https://sourceware.org/pipermail/gdb/2000-April/004509.html
 - https://webcache.googleusercontent.com/search?q=cache:pduhbeFGw3kJ:https://gbenson.net/%3Fp%3D407
 - https://stackoverflow.com/questions/27256275/how-does-gdb-know-where-an-executable-has-been-relocated
 - `_r_debug` initialization [glibc/elf/dl-debug.c](https://code.woboq.org/userspace/glibc/elf/dl-debug.c.html#_r_debug)
 - `_r_debug` defintion [glibc/elf/link.h](https://code.woboq.org/userspace/glibc/elf/link.h.html#r_debug)
+- https://github.com/Samsung/ADBI/blob/master/doc/DYNAMIC_LINKER
 
 - gdb `DT_DEBUG` lookup https://github.com/bminor/binutils-gdb/blob/binutils-2_34-branch/gdb/solib-svr4.c#L798-L810

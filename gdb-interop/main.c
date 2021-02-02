@@ -1,42 +1,38 @@
+#pragma GCC visibility push (hidden)
+
 #include <stddef.h>
 #include <stdint.h>
-#include "syscall.inl"
+#include "r_debug.h"
 
-enum r_state {
-  /** After add or delete */ RT_CONSISTENT = 0,
-  /** Before add          */ RT_ADD = 1,
-  /** Before delete       */ RT_DELETE = 2,
-};
+#ifndef FAKES_DIR
+#define FAKES_DIR "." // This is defined during build-time
+#endif
 
-/**
- * Communicates dynamic linker state with a debugger.
- * https://code.woboq.org/userspace/glibc/elf/link.h.html
- * https://code.woboq.org/userspace/glibc/elf/dl-debug.c.html#_r_debug
- */
-struct r_debug {
-  /** Version of the protocol. Should be 1 */
-  int32_t r_version;
-  /** Head of linked list of loaded objects. */
-  struct r_debug_link_map* r_map;
-  /** Address of internal function called before and after loading/unloading an object, so debugger can intercept it. */
-  uint64_t r_brk;
-  /** Current state when r_brk is called.  */
-  enum r_state r_state;
-  /** Base address of the linker. */
-  uint64_t r_ldbase;
-};
-
-struct r_debug_link_map {
-  /** Difference between the address in the ELF file and the address in memory. */
-  uint64_t l_addr;
-  /** Abosule file name. */
-  char* l_name;
-  /** Dynamic section. */
-  uint64_t* l_ld;
-
-  struct r_debug_link_map* l_next;
-  struct r_debug_link_map* l_prev;
-};
+#define NL "\n"
+__asm__(
+  ".text"                            NL
+  ".global __entry_point__"          NL
+  ".type __entry_point__, @function" NL
+  "__entry_point__:"                 NL
+  "   xor %rbp, %rbp"                NL
+  "   mov %rsp, %rdi"                NL
+  "   andq $-16, %rsp"               NL
+  "   call __entry_point_impl__"     NL
+// ".global syscall"                 NL // TODO: marking it global requires relocation for some reason
+  ".type syscall, @function"         NL
+  "syscall:"                         NL
+  "   mov %rdi, %rax"                NL
+  "   mov %rsi, %rdi"                NL
+  "   mov %rdx, %rsi"                NL
+  "   mov %rcx, %rdx"                NL
+  "   mov %r8, %r10"                 NL
+  "   mov %r9, %r8"                  NL
+  "   mov 0x8(%rsp), %r9"            NL
+  "   syscall"                       NL
+  "   ret"                           NL
+);
+#undef NL
+uint64_t syscall(uint64_t number, ...);
 
 /**
  * Debugger sets breakpoint on this function to watch for changes in shared objects.
@@ -55,7 +51,7 @@ struct r_debug _r_debug = {
   .r_brk = (uint64_t)_dl_debug_state
 };
 
-void* mmap_alloc(uint64_t size) {
+static void* mmap_alloc(uint64_t size) {
   return (void*)syscall(
     /*SYS_mmap*/(uint64_t)9,
     /*addr    */(uint64_t)0x0,
@@ -67,16 +63,17 @@ void* mmap_alloc(uint64_t size) {
   );
 }
 
-void _start() {
-  // TODO: (lldb) doesn't look into _r_debug or doesn't like incorrectly filled entries
-  //       Try shared executable like ld.so?
+extern void __relocate_self(uint64_t* sp);
+
+static void __entry_point_impl__(uint64_t* sp) {
+  __relocate_self(sp);
 
   _r_debug.r_state = RT_ADD;
   _dl_debug_state();
 
   static struct r_debug_link_map so1;
   so1.l_addr = (uint64_t)mmap_alloc(0x10000);
-  so1.l_name = "/lib64/ld-linux-x86-64.so.2",
+  so1.l_name = FAKES_DIR "/fake-1.so",
   so1.l_ld = (uint64_t[]){/*DT_NULL*/ 0, 0};
 
   _r_debug.r_state = RT_CONSISTENT;
@@ -85,9 +82,11 @@ void _start() {
   _r_debug.r_state = RT_ADD;
   _dl_debug_state();
 
+  // TODO: gdb expects first list entry to be ld.so and omits it
+
   static struct r_debug_link_map so2;
   so2.l_addr = (uint64_t)mmap_alloc(0x10000);
-  so2.l_name = "/lib/x86_64-linux-gnu/libc.so.6",
+  so2.l_name = FAKES_DIR "/fake-2.so",
   so2.l_ld = (uint64_t[]){/*DT_NULL*/ 0, 0};
 
   _r_debug.r_state = RT_CONSISTENT;
