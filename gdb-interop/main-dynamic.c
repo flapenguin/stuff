@@ -25,7 +25,7 @@ static int xx_strcmp(const char* lhs, const char* rhs) {
   return *lhs - *rhs;
 }
 
-static void xx_printf(const char* format, ...) {
+static int xx_printf(const char* format, ...) {
   va_list args;
   va_start(args, format);
   while (1) {
@@ -95,6 +95,8 @@ static void xx_printf(const char* format, ...) {
 static void reloc(const char* type, Elf64_Ehdr* ehdr, uint64_t dynv[static DT_NUM], Elf64_Rela* rela, int rela_len);
 extern struct r_debug _r_debug;
 
+static void xx_print_dt(uint64_t dt);
+
 #define AT_NUM 64
 void __relocate_self(uint64_t* sp) {
   const uint64_t argc = sp[0];
@@ -104,30 +106,23 @@ void __relocate_self(uint64_t* sp) {
   uint64_t* const raw_auxv = (void*)(env + envc + 1 /*trailing null*/);
   uint64_t* const raw_dynv = _DYNAMIC;
 
-  // TODO: fixup executable's dynv, not linker's
-  for (int i = 0; raw_dynv[i]; i += 2) {
-    if (raw_dynv[i] == DT_DEBUG) {
-      raw_dynv[i + 1] = (uint64_t)&_r_debug;
-      xx_printf("fixed up DT_DEBUG to %p\n", raw_dynv[i + 1]);
-      break;
-    }
-  }
+  int log = 0;
 
   for (uint64_t i = 0; i < argc; i++)
-    xx_printf("arg = %s\n", argv[i]);
-  xx_printf("env: %d vars\n", envc);
+    log && xx_printf("arg = %s\n", argv[i]);
+  log && xx_printf("env: %d vars\n", envc);
 
-  xx_printf("auxv: %p\n", (uint64_t)raw_auxv);
+  log && xx_printf("auxv: %p\n", (uint64_t)raw_auxv);
 
   uint64_t auxv[AT_NUM] = {0};
   for (int i = 0; raw_auxv[i]; i += 2) {
-    xx_printf("auxv[%d]: %d = 0x%x\n", i / 2, raw_auxv[i], raw_auxv[i + 1]);
+    log && xx_printf("auxv[%d]: %d = 0x%x\n", i / 2, raw_auxv[i], raw_auxv[i + 1]);
     if (raw_auxv[i] < AT_NUM) auxv[raw_auxv[i]] = raw_auxv[i + 1];
   }
 
   uint64_t dynv[DT_NUM] = {0};
   for (int i = 0; raw_dynv[i]; i += 2) {
-    xx_printf("dynv[%d]: %d = 0x%x\n", i / 2, raw_dynv[i], raw_dynv[i + 1]);
+    log && xx_printf("dynv[%d]: %d = 0x%x\n", i / 2, raw_dynv[i], raw_dynv[i + 1]);
     if (raw_dynv[i] < DT_NUM) dynv[raw_dynv[i]] = raw_dynv[i + 1];
   }
 
@@ -151,13 +146,71 @@ void __relocate_self(uint64_t* sp) {
   }
 
   xx_printf("ehdr = %p\n", ehdr);
+  xx_printf("execfn: %s\n", auxv[AT_EXECFN]);
+  xx_printf("entry: %p\n", auxv[AT_ENTRY]);
 
-  xx_printf("relocating {\n");
+  xx_printf("relocating %s {\n", (void*)ehdr + dynv[DT_STRTAB] + dynv[DT_SONAME]);
   if (dynv[DT_REL]) die("ERROR: DT_REL should not be used in x86_64\n");
   if (dynv[DT_PLTREL] && dynv[DT_PLTREL] != DT_RELA) die("ERROR: DT_PLTREL should not use DT_REL in x86_64\n");
   if (dynv[DT_RELA])   reloc("RELA  ", ehdr, dynv, (void*)ehdr + dynv[DT_RELA],   dynv[DT_RELASZ]   / dynv[DT_RELAENT]);
   if (dynv[DT_PLTREL]) reloc("JMPREL", ehdr, dynv, (void*)ehdr + dynv[DT_JMPREL], dynv[DT_PLTRELSZ] / dynv[DT_RELAENT]);
   xx_printf("}\n");
+
+  const uint64_t ldso_relaent = dynv[DT_RELAENT];
+
+  xx_printf("fixing %s {\n", auxv[AT_EXECFN]); {
+    Elf64_Phdr* phdr = (void*)auxv[AT_PHDR];
+    const uint64_t phent = auxv[AT_PHENT];
+    const uint64_t phnum = auxv[AT_PHNUM];
+    uint64_t* raw_dynv;
+    uint64_t dynv[DT_NUM] = {0};
+    void* base = 0;
+    for (int i = 0; i < phnum; i++) {
+      const Elf64_Phdr* ph = (void*)phdr + phent*i;
+      if (ph->p_type == PT_PHDR) {
+        base = (void*)phdr - ph->p_vaddr;
+        xx_printf("  loaded at %p\n", base);
+      }
+      if (ph->p_type == PT_DYNAMIC) {
+        raw_dynv = base + ph->p_vaddr;
+        for (int i = 0; raw_dynv[i]; i += 2) {
+          if (log) {
+            xx_printf("  ");
+            xx_print_dt(raw_dynv[i]);
+            xx_printf(" = 0x%x\n", raw_dynv[i + 1]);
+          }
+          if (raw_dynv[i] < DT_NUM) dynv[raw_dynv[i]] = raw_dynv[i + 1];
+        }
+      }
+    }
+
+    for (int i = 0; raw_dynv[i]; i += 2) {
+      if (raw_dynv[i] == DT_DEBUG) {
+        raw_dynv[i + 1] = (uint64_t)&_r_debug;
+        xx_printf("  fixed DT_DEBUG to %p\n", raw_dynv[i + 1]);
+        break;
+      }
+    }
+
+    // For some reason DT_RELAENT may not be present on the executable.
+    const uint64_t relaent = dynv[DT_RELAENT] ?: ldso_relaent;
+
+    xx_printf("  relocating {\n", (void*)base + dynv[DT_STRTAB] + dynv[DT_SONAME]);
+    if (dynv[DT_REL]) die("ERROR: DT_REL should not be used in x86_64\n");
+    if (dynv[DT_PLTREL] && dynv[DT_PLTREL] != DT_RELA) die("ERROR: DT_PLTREL should not use DT_REL in x86_64\n");
+    if (dynv[DT_RELA])   reloc("  RELA  ", base, dynv, (void*)base + dynv[DT_RELA],   dynv[DT_RELASZ]   / relaent);
+    if (dynv[DT_PLTREL]) reloc("  JMPREL", base, dynv, (void*)base + dynv[DT_JMPREL], dynv[DT_PLTRELSZ] / relaent);
+    xx_printf("  }\n");
+
+    xx_printf("}\n");
+  }
+
+  xx_printf("calling %s ...\n", auxv[AT_EXECFN]);
+  xx_printf("============================\n");
+  // TODO: SIGSEGV, corrupt stack
+  int ret = ((int (*)(void))(void*)auxv[AT_ENTRY])();
+  xx_printf("============================\n");
+  xx_printf("exitcode=%d\n", ret);
 }
 
 static void reloc(const char* type, Elf64_Ehdr* ehdr, uint64_t dynv[static DT_NUM], Elf64_Rela* rela, int rela_len) {
@@ -174,7 +227,10 @@ static void reloc(const char* type, Elf64_Ehdr* ehdr, uint64_t dynv[static DT_NU
     xx_printf("  %s looking up '%s + 0x%x'\n", type, wanted_symname, addend);
 
     const Elf64_Sym* found_sym = 0;
-    if (*wanted_symname) {
+    uint64_t symval = 0;
+    if (xx_strcmp(wanted_symname, "imported_printf") == 0) {
+      symval = (uint64_t)xx_printf;
+    } else if (*wanted_symname) {
       // Linear lookup via DT_HASH for simplicity.
       // In real life it's better to use DT_HASH properly or even better use DT_GNU_HASH.
       // https://flapenguin.me/elf-dt-hash
@@ -192,9 +248,10 @@ static void reloc(const char* type, Elf64_Ehdr* ehdr, uint64_t dynv[static DT_NU
         xx_printf("    not found\n");
         continue;
       }
+
+      symval = (uint64_t)((void*)ehdr + found_sym->st_value);
     }
 
-    const uint64_t symval = found_sym ? (uint64_t)((void*)ehdr + found_sym->st_value) : 0;
     xx_printf("    found at %p\n", symval);
 
     void* target = (void*)ehdr + rela[i].r_offset;
@@ -214,5 +271,49 @@ static void reloc(const char* type, Elf64_Ehdr* ehdr, uint64_t dynv[static DT_NU
         break;
       }
     }
+  }
+}
+
+static void xx_print_dt(uint64_t dt) {
+  #define c(X) case X: xx_printf("%s", #X); break
+  switch(dt) {
+    default: xx_printf("%d", dt); break;
+    c(DT_NULL);
+    c(DT_NEEDED);
+    c(DT_PLTRELSZ);
+    c(DT_PLTGOT);
+    c(DT_HASH);
+    c(DT_STRTAB);
+    c(DT_SYMTAB);
+    c(DT_RELA);
+    c(DT_RELASZ);
+    c(DT_RELAENT);
+    c(DT_STRSZ);
+    c(DT_SYMENT);
+    c(DT_INIT);
+    c(DT_FINI);
+    c(DT_SONAME);
+    c(DT_RPATH);
+    c(DT_SYMBOLIC);
+    c(DT_REL);
+    c(DT_RELSZ);
+    c(DT_RELENT);
+    c(DT_PLTREL);
+    c(DT_DEBUG);
+    c(DT_TEXTREL);
+    c(DT_JMPREL);
+    c(DT_BIND_NOW);
+    c(DT_INIT_ARRAY);
+    c(DT_FINI_ARRAY);
+    c(DT_INIT_ARRAYSZ);
+    c(DT_FINI_ARRAYSZ);
+    c(DT_RUNPATH);
+    c(DT_FLAGS);
+    c(DT_ENCODING);
+    c(DT_SYMTAB_SHNDX);
+    c(DT_LOOS);
+    c(DT_HIOS);
+    c(DT_LOPROC);
+    c(DT_HIPROC);
   }
 }

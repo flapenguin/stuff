@@ -1,10 +1,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-extern void imported_printf(const char* format, ...);
+// weak attribute is needed to prevent linker from complaining about undefined symbols.
+// Simply ignoring them during link time is not working and removing functions from relocations.
+//  (via --warn-unresolved-symbols or --unresolved-symbols=ignore-in-object-files)
+extern void imported_printf(const char* format, ...) __attribute__((weak));
 
-static int __entry_point_impl__() {
-  imported_printf("hi from interpreted!");
+int __entry_point_impl__() {
+  imported_printf("hi from interpreted!\n");
   return 42;
 }
 
@@ -17,6 +20,7 @@ __asm__(
   "   mov %rsp, %rdi"                NL
   "   andq $-16, %rsp"               NL
   "   call __entry_point_impl__"     NL
+  "   ret"                           NL
 );
 #undef NL
 
