@@ -1,22 +1,22 @@
 #!/bin/bash
 
-wget https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol01-preface.pdf
-wget https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol02a-commandreference-instructions.pdf
-wget https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol02b-commandreference-enumerations.pdf
-wget https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol02c-commandreference-registers-part1.pdf
-wget https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol02c-commandreference-registers-part2_0.pdf
-wget https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol02d-commandreference-structures.pdf
-wget https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol03-gpu_overview.pdf
-wget https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol04-configurations.pdf
-wget https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol05-memory_views.pdf
-wget https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol06-command_stream_programming.pdf
-wget https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol07-3d_media_gpgpu.pdf
-wget https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol08-media_vdbox.pdf
-wget https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol09-media_vebox.pdf
-wget https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol10-hevc.pdf
-wget https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol11-blitter.pdf
-wget https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol12-display.pdf
-wget https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol13-mmio.pdf
-wget https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol14-observability.pdf
-wget https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol15-sfc.pdf
-wget https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol16-workarounds.pdf
+wget -N https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol01-preface.pdf
+wget -N https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol02a-commandreference-instructions.pdf
+wget -N https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol02b-commandreference-enumerations.pdf
+wget -N https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol02c-commandreference-registers-part1.pdf
+wget -N https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol02c-commandreference-registers-part2_0.pdf
+wget -N https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol02d-commandreference-structures.pdf
+wget -N https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol03-gpu_overview.pdf
+wget -N https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol04-configurations.pdf
+wget -N https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol05-memory_views.pdf
+wget -N https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol06-command_stream_programming.pdf
+wget -N https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol07-3d_media_gpgpu.pdf
+wget -N https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol08-media_vdbox.pdf
+wget -N https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol09-media_vebox.pdf
+wget -N https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol10-hevc.pdf
+wget -N https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol11-blitter.pdf
+wget -N https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol12-display.pdf
+wget -N https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol13-mmio.pdf
+wget -N https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol14-observability.pdf
+wget -N https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol15-sfc.pdf
+wget -N https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol16-workarounds.pdf

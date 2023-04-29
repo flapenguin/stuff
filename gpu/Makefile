@@ -1,3 +1,4 @@
+CFLAGS += -g
 CFLAGS += -Werror=missing-prototypes
 CFLAGS += -Werror=missing-declarations
 CFLAGS += -Werror=implicit-function-declaration

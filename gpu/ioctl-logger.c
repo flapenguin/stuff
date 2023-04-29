@@ -16,15 +16,20 @@
 #include <dlfcn.h>
 
 #include <fnmatch.h>
+#include <execinfo.h>
 
 #include "util.h"
 
 static int (*original_ioctl)(int fd, unsigned long int request, ...);
-static const char* pattern = 0;
+static const char* g_pattern = 0;
+static bool g_log_unknown;
+static bool g_print_backtrace;
 __attribute__ ((constructor))
 static void ioctl__initialize() {
   original_ioctl = dlsym(RTLD_NEXT, "ioctl");
-  pattern = getenv("IOCTL_LOGGER") ?: "";
+  g_pattern = getenv("IOCTL_LOGGER") ?: "";
+  g_log_unknown = !getenv("IOCTL_LOGGER_NO_UNKNOWN");
+  g_print_backtrace = getenv("IOCTL_LOGGER_BACKTRACE");
 }
 
 static const char* handle__prefix;
@@ -32,14 +37,14 @@ static int handle__indent = 0;
 static int handle__skipped = false;
 
 #define PREFIX ":: "
+#define BACKTRACE_PREFIX PREFIX "  @ "
 
-#define ORIGINAL_HANDLER() original_ioctl(fd, request, arg)
 #define HANDLE(Request, HasResponse, Type, ...) do { \
   if (request != Request) break; \
-  handle__skipped = fnmatch(pattern, #Request, 0) == FNM_NOMATCH; \
+  handle__skipped = fnmatch(g_pattern, #Request, 0) == FNM_NOMATCH; \
   if (handle__skipped) break; \
   Type* req = arg; (void)req; \
-  fprintf(stderr, "\033[94m" PREFIX "\033[33mioctl(%d, " #Request ")\n", fd); \
+  fprintf(stderr, "\033[94m" PREFIX "\033[33m" "ioctl(%d, " #Request ")\n", fd); \
   fputs("\033[94m", stderr); \
   handle__prefix = ""; \
   if (HasResponse) { \
@@ -47,7 +52,7 @@ static int handle__skipped = false;
     handle__prefix = "   "; \
   } \
    __VA_ARGS__ \
-  int ret = ORIGINAL_HANDLER(); \
+  int ret = original_ioctl(fd, request, arg); \
   fprintf(stderr, PREFIX "   (retval) = %d ", ret); \
   if (ret) fprintf(stderr, "(errno) = %d %s", errno, strerror(errno)); \
   fputc('\n', stderr); \
@@ -57,6 +62,7 @@ static int handle__skipped = false;
     __VA_ARGS__ \
   } \
   fputs("\033[0m", stderr); \
+  if (g_print_backtrace) print_backtrace(); \
   return ret; \
 } while (0)
 
@@ -114,12 +120,24 @@ static uint64_t d__flag;
 // Satisfy -Werror=missing-prototypes.
 int ioctl(int fd, unsigned long int request, void* arg);
 
+static void print_backtrace(void);
+
 // sys/ioctl.h has vararg signature with dots, but this is wierd flex of libc.
 // https://stackoverflow.com/a/28467048
 int ioctl(int fd, unsigned long int request, void* arg) {
   handle__skipped = false;
 
-  HANDLE(DRM_IOCTL_VERSION, 0, struct drm_version, {});
+  HANDLE(DRM_IOCTL_VERSION, 1, struct drm_version, {
+    DRF(version_major);
+    DRF(version_minor);
+    DRF(version_patchlevel);
+    DRF(name_len);
+    DRF(name);
+    DRF(date_len);
+    DRF(date);
+    DRF(desc_len);
+    DRF(desc);
+  });
   HANDLE(DRM_IOCTL_GEM_CLOSE, 0, struct drm_gem_close, {});
   HANDLE(DRM_IOCTL_PRIME_HANDLE_TO_FD, 0, struct drm_prime_handle, {});
 
@@ -244,9 +262,31 @@ int ioctl(int fd, unsigned long int request, void* arg) {
     DRF(rsvd2);
   });
 
-  if (DRM_COMMAND_BASE <= _IOC_TYPE(request) && _IOC_TYPE(request) <= DRM_COMMAND_END && !handle__skipped) {
+  if (
+    g_log_unknown &&
+    DRM_COMMAND_BASE <= _IOC_TYPE(request) &&
+    _IOC_TYPE(request) <= DRM_COMMAND_END &&
+    !handle__skipped
+  ) {
     fprintf(stderr, "\033[94m" PREFIX "\033[33mioctl(%d, %lx) => ???\n", fd, request);
   }
 
-  return ORIGINAL_HANDLER();
+  return original_ioctl(fd, request, arg);
+}
+
+/** Obtain a backtrace and print it to stdout. */
+static void print_backtrace(void) {
+  // https://www.gnu.org/software/libc/manual/html_node/Backtraces.html
+  static void* array[128];
+  size_t size;
+  char **strings;
+  size_t i;
+
+  size = backtrace(array, sizeof(array) / sizeof(array[0]));
+  strings = backtrace_symbols(array, size);
+  for (i = 0; i < size; i++) {
+    fprintf(stderr, "\033[94m" BACKTRACE_PREFIX "\033[96m%s\033[0m\n", strings[i]);
+  }
+
+  free(strings);
 }

@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdarg.h>
 #include <math.h>
 #include <memory.h>
 
@@ -50,7 +51,16 @@ static uint32_t align_u32(uint32_t value, uint32_t alignment) {
   return ((value + alignment - 1) / alignment) * alignment;
 }
 
-static void die(const char* msg) { puts(msg); exit(1); }
+static void die(const char* format, ...) {
+  fprintf(stderr, "DIE ");
+
+  va_list args;
+  va_start(args, format);
+  vfprintf(stderr, format, args);
+  va_end(args);
+
+  exit(1);
+}
 
 static const int width = 512;
 static const int height = 512;
@@ -160,9 +170,16 @@ int main(int argc, char* argv[]) {
     xcb_randr_get_providers_cookie_t cookie = xcb_randr_get_providers(c, window);
     xcb_generic_error_t* e;
     xcb_randr_get_providers_reply_t* reply = xcb_randr_get_providers_reply(c, cookie, &e);
+    if (e) die("xcb_randr_get_providers %x", e->error_code);
     xcb_randr_provider_t* providers = xcb_randr_get_providers_providers(reply);
-    size_t length = xcb_randr_get_providers_providers_length(reply);
-    providers[0];
+    xcb_randr_provider_t provider;
+    if (reply->num_providers == 0) {
+      fprintf(stderr, "No providers (probably quirk of Xwayland). Using 0, its usually ok\n");
+      provider = 0;
+    } else {
+      provider = providers[0];
+    }
+    provider;
   });
 
   struct {
@@ -186,7 +203,7 @@ int main(int argc, char* argv[]) {
     xcb_generic_error_t* e = 0;
     xcb_dri3_open_cookie_t cookie = xcb_dri3_open(c, window, provider);
     xcb_dri3_open_reply_t* reply = xcb_dri3_open_reply(c, cookie, &e);
-    if (e) die("dri3");
+    if (e) die("dri3 %x", e->error_code);
     int* fds = xcb_dri3_open_reply_fds(c, reply);
     fds[0];
   });
@@ -320,7 +337,7 @@ int main(int argc, char* argv[]) {
   printf("\tfd = %d\n", dri.dmabuf_fd);
   printf("screen gem\n");
   printf("\thandle = %u\n", dri.screen_gem_handle);
-  printf("\tsize = %u\n", dri.screen_gem_size);
+  printf("\tsize = %lu\n", dri.screen_gem_size);
   printf("\n");
 
   const struct dri_img tux_img = SECTION("Load tux.ppm", load_ppm("./tux.ppm", dri.fd));
@@ -404,9 +421,6 @@ int main(int argc, char* argv[]) {
     memcpy((void*)req.addr_ptr, command_buffer_data, sizeof(command_buffer_data));
     munmap((void*)req.addr_ptr, command_buffer_size);
   });
-
-  // Looks like first ENOENT in eb_relocate_entry is happening.
-  // https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/drivers/gpu/drm/i915/i915_gem_execbuffer.c?h=v5.0#n1337
 
   SECTION("Executing command buffer", {
     const uint32_t dummy_gem = ({
