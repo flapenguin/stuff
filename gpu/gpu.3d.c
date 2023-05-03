@@ -20,6 +20,8 @@
 
 #include <drm/drm.h>
 #include <drm/i915_drm.h>
+#include "i915.inl.c"
+#include "rect.h"
 
 /* NOTE: xcb/xlib is optional, but surely make life easier */
 #include <xcb/xcb.h>
@@ -62,8 +64,8 @@ static void die(const char* format, ...) {
   exit(1);
 }
 
-static const int width = 512;
-static const int height = 512;
+static const int window_width = 512;
+static const int window_height = 512;
 
 static const char* get_path_for_fd(int fd) {
   char* path = 0;
@@ -76,15 +78,7 @@ static const char* get_path_for_fd(int fd) {
   return path;
 }
 
-struct dri_img {
-  uint32_t width;
-  uint32_t height;
-  uint32_t pitch;
-  uint32_t size;
-  uint32_t handle;
-};
-
-static struct dri_img load_ppm(const char* path, int dri_fd) {
+static i915surface_t load_ppm(const char* path, int dri_fd) {
   FILE* f = fopen(path, "rb");
   if (!f) die(strerror(errno));
 
@@ -143,7 +137,7 @@ static struct dri_img load_ppm(const char* path, int dri_fd) {
   munmap(mem, size);
   free(body);
 
-  return (struct dri_img){width, height, pitch * sizeof(uint32_t), size, handle};
+  return (i915surface_t){.gem = {.handle = handle, .delta = 0, .size = size}, .width = width, .height = height, .pitch = pitch * sizeof(uint32_t)};
 }
 
 int main(int argc, char* argv[]) {
@@ -159,7 +153,7 @@ int main(int argc, char* argv[]) {
 
     xcb_window_t window = xcb_generate_id(c);
     xcb_create_window(
-      c, XCB_COPY_FROM_PARENT, window, s->root, 0, 0, width, height, 1,
+      c, XCB_COPY_FROM_PARENT, window, s->root, 0, 0, window_width, window_height, 1,
       XCB_WINDOW_CLASS_INPUT_OUTPUT, s->root_visual, mask,
       values);
     window;
@@ -188,14 +182,9 @@ int main(int argc, char* argv[]) {
     struct drm_version version;
     int chipset;
 
-    size_t screen_gem_size;
-    uint32_t screen_gem_handle;
-
     int dmabuf_fd;
     uint32_t dmabuf_pixmap;
   } dri;
-
-  dri.screen_gem_size = width * height * 4;
 
   /* Fetch fd for gpu via DRI3. */
   dri.fd = ({
@@ -235,15 +224,19 @@ int main(int argc, char* argv[]) {
   });
 
   LOG("Allocate memory for 'texture' (afaiu, it's just generic memory).");
-  dri.screen_gem_handle = ({
-    struct drm_i915_gem_create req = {.size = dri.screen_gem_size};
+  i915surface_t screen = ({
+    uint32_t width = window_width;
+    uint32_t height = window_height;
+    size_t size = width * height * sizeof(uint32_t);
+    struct drm_i915_gem_create req = {.size = size};
     ioctlQ(dri.fd, DRM_IOCTL_I915_GEM_CREATE, &req);
-    req.handle;
+
+    (i915surface_t){.gem = {.handle = req.handle, .delta = 0, .size = size}, .width = width, .height = height, .pitch = width * sizeof(uint32_t)};
   });
 
   LOG("Mark gem as render object."); {
     struct drm_i915_gem_set_domain req = {
-      .handle = dri.screen_gem_handle,
+      .handle = screen.gem.handle,
       .read_domains = I915_GEM_DOMAIN_WC,
       .write_domain = I915_GEM_DOMAIN_WC,
     };
@@ -253,7 +246,7 @@ int main(int argc, char* argv[]) {
 
   SECTION("Set tiling", {
     struct drm_i915_gem_set_tiling req = {
-      .handle = dri.screen_gem_handle,
+      .handle = screen.gem.handle,
       .tiling_mode = I915_TILING_NONE
     };
 
@@ -261,13 +254,13 @@ int main(int argc, char* argv[]) {
   });
 
   SECTION("Get tiling", {
-    struct drm_i915_gem_get_tiling req = {.handle = dri.screen_gem_handle};
+    struct drm_i915_gem_get_tiling req = {.handle = screen.gem.handle};
     ioctlQ(dri.fd, DRM_IOCTL_I915_GEM_GET_TILING, &req);
   });
 
   LOG("Get fd for interop with x11 from 'texture'.");
   dri.dmabuf_fd = ({
-    struct drm_prime_handle req = {.handle = dri.screen_gem_handle};
+    struct drm_prime_handle req = {.handle = screen.gem.handle};
     ioctlQ(dri.fd, DRM_IOCTL_PRIME_HANDLE_TO_FD, &req);
     req.fd;
   });
@@ -284,8 +277,8 @@ int main(int argc, char* argv[]) {
     const uint32_t pixmap = xcb_generate_id(c);
     xcb_dri3_pixmap_from_buffer(c,
       pixmap, window,
-      dri.screen_gem_size, width, height,
-      width*4, 24, 32,
+      screen.gem.size, screen.width, screen.height,
+      screen.pitch, /*depth*/24, /*bpp*/32,
       dri.dmabuf_fd
     );
 
@@ -336,11 +329,11 @@ int main(int argc, char* argv[]) {
   printf("dmabuf\n");
   printf("\tfd = %d\n", dri.dmabuf_fd);
   printf("screen gem\n");
-  printf("\thandle = %u\n", dri.screen_gem_handle);
-  printf("\tsize = %lu\n", dri.screen_gem_size);
+  printf("\thandle = %u\n", screen.gem.handle);
+  printf("\tsize = %lu\n", screen.gem.size);
   printf("\n");
 
-  const struct dri_img tux_img = SECTION("Load tux.ppm", load_ppm("./tux.ppm", dri.fd));
+  const i915surface_t tux = SECTION("Load tux.ppm", load_ppm("./tux.ppm", dri.fd));
 
   LOG("Creating command buffer");
   const uint64_t command_buffer_size = 4096;
@@ -354,71 +347,27 @@ int main(int argc, char* argv[]) {
     req.handle;
   });
 
-  // Must be 64-bit aligned (got this via trial and error).
-  const uint32_t command_buffer_data[] = {
-    /* MI_STORE_DATA_IMM    */(0x20 << 23) | /* Store Qword */ 3,
-    /* - address 0123       */0xdeadbeaf, // relocation@1
-    /* - address 4567       */0xdeadbeaf,
-    /* - value 0123         */0x0000ff00, /* argb */
-    /* - value 4567         */0x0000ff00,
+  i915cmd_buf_t buf = {};
+  buf.data = buf.start = malloc(1024);
 
-    /* MI_NOOP              */0x00, /* padding */
-
-    /* MI_STORE_DATA_IMM    */(0x20 << 23) | /* Store Qword */ 3,
-    /* - address 0123       */0xdeadbeaf, // relocation@7
-    /* - address 4567       */0xdeadbeaf,
-    /* - value 0123         */0x0000ff00,
-    /* - value 4567         */0x0000ff00,
-
-    /* MI_NOOP              */0x00, /* padding */
-
-    /* MI_STORE_DATA_IMM    */(0x20 << 23) | /* Store Qword */ 3,
-    /* - address 0123       */0xdeadbeaf, // relocation@13
-    /* - address 4567       */0xdeadbeaf,
-    /* - value 0123         */0x0000ff00,
-    /* - value 4567         */0x0000ff00,
-
-    /* MI_NOOP              */0x00, /* padding */
-
-    /* - Vol. 11 Blitter - Bit-Wise Operations and 8-bit Codes (C0 - FF) */
-    /* XY_COLOR_BLT         */((0x2 << 29) | (0x50 << 22)) | /* write alpha  */(0x1 << 21) | /* write rgb */(0x1 << 20) | /* no tiling */(0x0 << 11) | /* length */(0x5),
-    /* - 32 bit color       */(0b11 << 24) | /* raster op: P */(0xf0 << 16) | /* pitch */ width * sizeof(uint32_t),
-    /* - top|left           */(0x00 << 16) | 0x00,
-    /* - bottom|right       */(0x20 << 16) | 0x20,
-    /* - address 0123       */0xdeadbeaf, // relocation@22
-    /* - address 4567       */0xdeadbeaf,
-    /* - color              */0x00ff0000,
-
-    /* XY_FAST_COPY_BLT     */((0x2 << 29) | (0x42 << 22)) | /* no tiling src */(0x0 << 20) | /* no tiling dst */(0x0 << 13) | /* length */(0x8),
-    /* -                    *//* 32bit color */(0b011 << 24) | /* dst pitch */width * sizeof(uint32_t),
-    /* - dst top|left       */((0) << 16) | (width - tux_img.width),
-    /* - dst bottom|right   */((tux_img.height) << 16) | (width),
-    /* - dst address 0123   */0xdeadbeaf, // relocation@29
-    /* - dst address 4567   */0xdeadbeaf,
-    /* - src left|top       */(0x00 << 16) | 0x00,
-    /* -                    *//*src pitch*/tux_img.pitch,
-    /* - src address 0123   */0xdeadbeaf, // relocation@33
-    /* - src address 4567   */0xdeadbeaf,
-
-    /* MI_BATCH_BUFFER_END  */(0xA << 23)
-  };
-
-  struct drm_i915_gem_relocation_entry relocations[] = {
-    {.offset =  1, .target_handle = dri.screen_gem_handle, .delta = (width * 5 + 64) * sizeof(uint32_t)},
-    {.offset =  7, .target_handle = dri.screen_gem_handle, .delta = (width * 8 + 64) * sizeof(uint32_t)},
-    {.offset = 13, .target_handle = dri.screen_gem_handle, .delta = (width * 11 + 64) * sizeof(uint32_t)},
-    {.offset = 22, .target_handle = dri.screen_gem_handle},
-    {.offset = 29, .target_handle = dri.screen_gem_handle},
-    {.offset = 33, .target_handle = tux_img.handle},
-  };
-
-  for (uint32_t i = 0; i < sizeof(relocations)/sizeof(relocations[0]); i++) relocations[i].offset *= sizeof(uint32_t);
+  i915cmd_MI_STORE_DATA_IMM_uint32(&buf, i915gem_with_delta(screen.gem, (screen.width *  5 + 64) * sizeof(uint32_t)), 0x00ffffff);
+  i915cmd_MI_STORE_DATA_IMM_uint64(&buf, i915gem_with_delta(screen.gem, (screen.width *  8 + 64) * sizeof(uint32_t)), 0x00ffffff'0000ff00);
+  i915cmd_MI_STORE_DATA_IMM_uint32(&buf, i915gem_with_delta(screen.gem, (screen.width * 11 + 64) * sizeof(uint32_t)), 0x00ffffff);
+  i915cmd_MI_STORE_DATA_IMM(&buf, i915gem_with_delta(screen.gem, (screen.width * 14 + 64) * sizeof(uint32_t)), 8*4, (uint32_t[]){
+    0x00ff0000, 0x00ff0000, 0x00ff0000, 0x00ff0000,  0x00ff0000, 0x00ff0000, 0x00ff0000, 0x00ff0000,
+    0x000000ff, 0x000000ff, 0x000000ff, 0x000000ff,  0x000000ff, 0x000000ff, 0x000000ff, 0x000000ff,
+    0x0000ff00, 0x0000ff00, 0x0000ff00, 0x0000ff00,  0x0000ff00, 0x0000ff00, 0x0000ff00, 0x0000ff00,
+    0x00ff0000, 0x00ff0000, 0x00ff0000, 0x00ff0000,  0x00ff0000, 0x00ff0000, 0x00ff0000, 0x00ff0000,
+  });
+  i915cmd_XY_COLOR_BLT(&buf, screen, (u32rect_t){.top = 0, .left = 0, .bottom = 0x20, .right = 0x20}, 0x00ff0000);
+  i915cmd_XY_FAST_COPY_BLT(&buf, screen, (u32rect_t){.top = 0, .left = screen.width - tux.width, .bottom = tux.height, .right = screen.width}, tux, (u32point_t){0, 0});
+  i915cmd_MI_BATCH_BUFFER_END(&buf);
 
   SECTION("Writing commands to buffer", {
     struct drm_i915_gem_mmap req = {.handle = command_buffer_handle, .size = command_buffer_size};
-    ioctl(dri.fd, DRM_IOCTL_I915_GEM_MMAP, &req);
+    ioctlQ(dri.fd, DRM_IOCTL_I915_GEM_MMAP, &req);
 
-    memcpy((void*)req.addr_ptr, command_buffer_data, sizeof(command_buffer_data));
+    memcpy((void*)req.addr_ptr, buf.start, (buf.data - buf.start) * sizeof(buf.start[0]));
     munmap((void*)req.addr_ptr, command_buffer_size);
   });
 
@@ -430,14 +379,15 @@ int main(int argc, char* argv[]) {
     });
 
     struct drm_i915_gem_exec_object2 exec_objects[] = {
-      // FIXME: for some reason relocations doesn't work on the very first object, prepend dummy gem as a workaround.
-      {.handle = dummy_gem,             .flags = EXEC_OBJECT_SUPPORTS_48B_ADDRESS},
-      {.handle = tux_img.handle,        .flags = EXEC_OBJECT_SUPPORTS_48B_ADDRESS},
-      {.handle = dri.screen_gem_handle, .flags = EXEC_OBJECT_SUPPORTS_48B_ADDRESS},
+      // EMPERICAL: for some reason relocations doesn't work on the very first object, prepend dummy gem as a workaround.
+      {.handle = dummy_gem,         .flags = EXEC_OBJECT_SUPPORTS_48B_ADDRESS},
+      {.handle = tux.gem.handle,    .flags = EXEC_OBJECT_SUPPORTS_48B_ADDRESS},
+      {.handle = screen.gem.handle, .flags = EXEC_OBJECT_SUPPORTS_48B_ADDRESS},
+      // EMPERICAL: Command Buffer GEM must be the last one.
       {
         .handle = command_buffer_handle,
-        .relocs_ptr = (uintptr_t)relocations,
-        .relocation_count = sizeof(relocations) / sizeof(relocations[0]),
+        .relocs_ptr = (uintptr_t)buf.relocations.values,
+        .relocation_count = buf.relocations.size,
         .flags = 0
           | EXEC_OBJECT_SUPPORTS_48B_ADDRESS
           | EXEC_OBJECT_CAPTURE
@@ -447,7 +397,8 @@ int main(int argc, char* argv[]) {
     struct drm_i915_gem_execbuffer2 req = {
       .buffers_ptr = (uintptr_t)exec_objects,
       .buffer_count = sizeof(exec_objects) / sizeof(exec_objects[0]),
-      .batch_len = sizeof(command_buffer_data),
+      .batch_start_offset = 0,
+      .batch_len = (buf.data - buf.start) * sizeof(buf.start[0]),
       .flags = 0
         | I915_EXEC_BLT
         | I915_EXEC_DEFAULT
@@ -483,7 +434,7 @@ int main(int argc, char* argv[]) {
       case XCB_EXPOSE: {
         LOG("xcb_copy_area & xcb_flush");
         /* Tell X11 server to draw "texture". */
-        xcb_copy_area(c, dri.dmabuf_pixmap, window, gc, 0, 0, 0, 0, width, height);
+        xcb_copy_area(c, dri.dmabuf_pixmap, window, gc, 0, 0, 0, 0, screen.width, screen.height);
         xcb_flush(c);
         break;
       }
